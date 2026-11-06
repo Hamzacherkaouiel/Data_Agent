@@ -7,6 +7,7 @@ from utils.database import DatabaseUtil
 from utils.llm_pick import pick_llm
 from Models.schema import AgentSchema , JudgeSchema
 from langchain_core.messages import HumanMessage , AIMessage
+from langgraph.graph import StateGraph , START , END
 
 def curate_question(state:AgentSchema) -> AgentSchema:
     user_question = state.user_question
@@ -74,7 +75,7 @@ def is_safe_sql(state: AgentSchema) -> AgentSchema:
     sql_query = state.generated_sql_query
 
     llm = pick_llm("medium")  
-    llm_judge = llm.with_structured_output(JudgeSchema)
+    llm_judge = llm.with_structured_output(JudgeSchema , method = "json_schema") # method json_schema just for Groq everything else is just you inject the schema without method 
 
     prompt = f"""
     You are an SQL Judge for data security. Your task is to determine whether the SQL query is 
@@ -101,9 +102,16 @@ def canceled_sql(state: AgentSchema) -> AgentSchema:
 
     return state
 
+## clean the query 
+def clean_sql(text: str) -> str:
+    match = re.search(r"```(?:sql)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if match:
+        text = match.group(1)
+    return text.strip()
+
 def execute_sql(state: AgentSchema) -> AgentSchema:
 
-    sql_query = state.generated_sql_query
+    sql_query = clean_sql(state.generated_sql_query)
 
     conn_details = {
         "host": os.environ['HOST'],
@@ -144,5 +152,73 @@ def represent_final_answer(state: AgentSchema) -> AgentSchema:
 
     state.final_answer = llm_response
     state.messages = state.messages + [AIMessage(content=f"{llm_response}")] 
-    
+
     return state
+
+# Create the nodes and graph
+
+sql_agent_graph = StateGraph(AgentSchema)
+
+sql_agent_graph.add_node(curate_question , name = "curate_question")
+sql_agent_graph.add_node(prompt_query_context , name = "prompt_query_context")
+sql_agent_graph.add_node(generate_sql , name = "generate_sql")
+sql_agent_graph.add_node(is_safe_sql , name = "is_safe_sql")
+sql_agent_graph.add_node(canceled_sql , name = "canceled_sql")
+sql_agent_graph.add_node(execute_sql , name = "execute_sql")
+sql_agent_graph.add_node(represent_final_answer , name = "represent_final_answer")
+
+# Create Edges
+sql_agent_graph.add_edge(START,"curate_question")
+sql_agent_graph.add_edge("curate_question","prompt_query_context")
+sql_agent_graph.add_edge("prompt_query_context", "generate_sql")
+sql_agent_graph.add_edge("generate_sql", "is_safe_sql")
+
+def is_safe_sql_edge(state: AgentSchema) -> str:
+    is_safe = state.is_safe
+
+    if is_safe.lower() == "yes":
+        return "execute_sql"
+
+    else :
+        return "canceled_sql"
+
+sql_agent_graph.add_conditional_edges("is_safe_sql", is_safe_sql_edge,
+                                      {
+                                          "execute_sql": "execute_sql",
+                                          "canceled_sql": "canceled_sql"
+                                      })
+
+sql_agent_graph.add_edge("canceled_sql", END)
+sql_agent_graph.add_edge("execute_sql", "represent_final_answer")
+sql_agent_graph.add_edge("represent_final_answer", END)
+
+sql_analyst = sql_agent_graph.compile()
+
+if __name__ == "__main__":
+
+    input_schema = {
+        "messages": [],
+        "user_question": "What are the different types of Payment Methods we have in our database",
+        "curated_ques": "",
+        "prompt_query_context": "",
+        "generated_sql_query": "",
+        "is_safe": "No",
+        "comments": "",
+        "sql_query_execution_result": "",
+        "final_answer": ""
+    }
+
+    # Execute the Graph
+    sql_analyst_response = sql_analyst.invoke(input_schema)
+
+    print(sql_analyst_response['messages'])  
+    print("********************************")
+
+    print(sql_analyst_response['generated_sql_query']) 
+
+    print("********************************")
+
+    print(sql_analyst_response['sql_query_execution_result']) 
+    print("********************************")
+
+    print(sql_analyst_response['prompt_query_context'])   
