@@ -102,7 +102,7 @@ def canceled_sql(state: AgentSchema) -> AgentSchema:
 
     return state
 
-## clean the query 
+## clean the query ````
 def clean_sql(text: str) -> str:
     match = re.search(r"```(?:sql)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
     if match:

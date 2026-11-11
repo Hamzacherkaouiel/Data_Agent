@@ -73,15 +73,3 @@ class DatabaseUtil:
             if connection:
                 connection.close()
 
-obj = DatabaseUtil({
-    "host": "localhost",
-    "port": 5544,
-    "user": "hamza",
-    "password": "hamza",
-    "dbname": "agentdb"
-})
-
-result = obj.schema_details("public")
-
-with open("test_schema_details.txt", "w") as f:
-    f.write(result)
