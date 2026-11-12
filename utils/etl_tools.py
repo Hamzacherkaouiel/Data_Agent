@@ -73,7 +73,3 @@ class ETLTools:
         except Exception as e:
             return f"Failed to execute code: {e}"
 
-if __name__ == "__main__":
-    obj = ETLTools()
-    path = r"C:\Users\PC\Desktop\Data_Agent\data\extract\extracted_data.json"
-    print(obj.transform_load_context(path))
