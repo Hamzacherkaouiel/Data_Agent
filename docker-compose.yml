@@ -7,7 +7,7 @@ services:
     image: postgres:16
     restart: unless-stopped
     ports:
-      - "5544:5432"
+      - ${port}:${port}
 
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
